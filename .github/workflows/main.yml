@@ -1,0 +1,59 @@
+name: Dotnet
+on:
+  push:
+    branches:
+    - main
+  workflow_dispatch:
+env:
+  solution: Verademo-dotnet.sln
+  buildPlatform: Any CPU
+  buildConfiguration: Release
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: microsoft/setup-msbuild@v1.0.2
+    - uses: nuget/setup-nuget@v1
+    - run: nuget restore ${{ env.solution }}
+    - run: msbuild '${{ env.solution }}' /p:configuration='${{ env.buildConfiguration }}' /p:platform='${{ env.buildPlatform }}' /p:DeployOnBuild=true /p:WebPublishMethod=Package /p:PackageAsSingleFile=true /p:SkipInvalidConfigurations=true /p:PackageLocation="${{ github.workspace }}"
+    - name: Veracode Static Pipeline Scanner
+      run: |
+        curl -sSO https://downloads.veracode.com/securityscan/pipeline-scan-LATEST.zip
+        unzip -o pipeline-scan-LATEST.zip
+        java -jar pipeline-scan.jar -vid ${{ env.VID }} -vkey ${{ env.VKEY }} -f ${{ github.workspace }}\Verademo-dotnet.zip || true
+      shell: cmd
+    - name: Create Build Artifact for Veracode Static Pipeline Scanner Results
+      uses: actions/upload-artifact@v2
+      with:
+        path: results.json
+        name: Build
+        
+
+  Veracode-SAST-Policy-Scan:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Archive Release
+      uses: actions/setup-go@v3
+      with:
+        filename: 'Verademo-dotnet.zip'
+        path: ./Verademo-dotnet.zip
+  
+              
+    - uses: actions/upload-artifact@v2 
+      with:
+        path: ./Verademo-dotnet.zip
+    - uses: veracode/veracode-uploadandscan-action@master 
+      with:
+        vid: '${{ secrets.VID }}'
+        vkey: '${{ secrets.VKEY }}'
+        criticality: 'Medium'
+        appname: 'Lab-Verademo-DotNet'
+        createprofile: 'true'
+        filepath: ./
+        deleteIncompleteScan: 'true'
+        version: ${{ github.run_id }}'
+        scantimeout: 30    
+    
